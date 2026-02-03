@@ -1,19 +1,18 @@
-const CACHE_NAME = 'viajeros-v2';
-const ASSETS_TO_CACHE = [
+const CACHE_NAME = 'viajeros-v3';
+
+// SOLO cacheamos los archivos locales críticos durante la instalación.
+// Esto evita errores 404 en enlaces externos que rompen la app.
+const PRECACHE_URLS = [
+  './',
   './index.html',
-  './manifest.json',
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/vue@3/dist/vue.global.js',
-  'https://unpkg.com/@phosphor-icons/web',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap',
-  'https://cdn-icons-png.flaticon.com/512/201/201623.png'
+  './manifest.json'
 ];
 
-// Instalación: Cachear recursos estáticos
+// Instalación: Cachear solo lo local
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return cache.addAll(PRECACHE_URLS);
     })
   );
   self.skipWaiting();
@@ -35,9 +34,12 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Estrategia Cache First, falling back to Network
+// Fetch: Estrategia híbrida
+// 1. Intenta servir desde Caché
+// 2. Si no está, va a la Red
+// 3. Guarda la respuesta de la Red en Caché para la próxima vez (Runtime Caching para CDNs)
 self.addEventListener('fetch', (event) => {
-  // Solo manejar peticiones GET
+  // Solo peticiones GET (ignorar POST, PUT, etc.)
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
@@ -45,12 +47,14 @@ self.addEventListener('fetch', (event) => {
       if (cachedResponse) {
         return cachedResponse;
       }
+
       return fetch(event.request).then((networkResponse) => {
-        // Validación básica de respuesta
+        // Verificar respuesta válida
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors' && networkResponse.type !== 'opaque') {
           return networkResponse;
         }
 
+        // Clonar y guardar en caché (Aquí se guardarán Tailwind, Vue, etc. automáticamente)
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, responseToCache);
@@ -58,7 +62,8 @@ self.addEventListener('fetch', (event) => {
 
         return networkResponse;
       }).catch(() => {
-        console.log('Modo offline: recurso no disponible en caché');
+        // Fallback opcional si no hay red ni caché (podríamos devolver una página offline.html si existiera)
+        console.log('Offline: recurso no disponible');
       });
     })
   );
