@@ -1,14 +1,13 @@
-const CACHE_NAME = 'viajeros-v3';
+const CACHE_NAME = 'viajeros-v5'; // Incrementamos versión para forzar actualización
 
-// SOLO cacheamos los archivos locales críticos durante la instalación.
-// Esto evita errores 404 en enlaces externos que rompen la app.
+// Usamos rutas ABSOLUTAS (con barra al principio) para evitar problemas en Vercel
 const PRECACHE_URLS = [
-  './',
-  './index.html',
-  './manifest.json'
+  '/',
+  '/index.html',
+  '/manifest.json'
 ];
 
-// Instalación: Cachear solo lo local
+// Instalación: Cachear archivos críticos
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -34,14 +33,27 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Estrategia híbrida
-// 1. Intenta servir desde Caché
-// 2. Si no está, va a la Red
-// 3. Guarda la respuesta de la Red en Caché para la próxima vez (Runtime Caching para CDNs)
+// Fetch: Estrategia Network First para navegación, Cache First para recursos
 self.addEventListener('fetch', (event) => {
-  // Solo peticiones GET (ignorar POST, PUT, etc.)
+  // Solo peticiones GET
   if (event.request.method !== 'GET') return;
 
+  const url = new URL(event.request.url);
+
+  // Estrategia especial para Navegación (abrir la app)
+  // Intentamos red primero, si falla, devolvemos index.html del caché
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .catch(() => {
+          return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+
+  // Estrategia para recursos (imágenes, scripts, estilos)
+  // Cache First, luego Network y actualizamos caché
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
@@ -49,12 +61,12 @@ self.addEventListener('fetch', (event) => {
       }
 
       return fetch(event.request).then((networkResponse) => {
-        // Verificar respuesta válida
+        // Verificar validez
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors' && networkResponse.type !== 'opaque') {
           return networkResponse;
         }
 
-        // Clonar y guardar en caché (Aquí se guardarán Tailwind, Vue, etc. automáticamente)
+        // Guardar en caché para el futuro
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, responseToCache);
@@ -62,8 +74,7 @@ self.addEventListener('fetch', (event) => {
 
         return networkResponse;
       }).catch(() => {
-        // Fallback opcional si no hay red ni caché (podríamos devolver una página offline.html si existiera)
-        console.log('Offline: recurso no disponible');
+        // Si falla todo (offline y no caché), no hacemos nada o podríamos devolver un placeholder
       });
     })
   );
