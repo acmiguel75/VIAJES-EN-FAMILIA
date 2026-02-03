@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/201/201623.png">
+
+    <title>Viajeros en Familia - Calculadora de Viajes</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        glass: 'rgba(255, 255, 255, 0.65)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #f0f9ff 0%, #dbeafe 50%, #e0f2fe 100%);
+            min-height: 100vh;
+            /* PWA Fixes */
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
+        }
+
+        /* Input Styles - "Invisible" until focused */
+        .input-ghost {
+            background: transparent;
+            border-bottom: 1px solid transparent;
+            transition: all 0.2s;
+        }
+        .input-ghost:hover { border-color: rgba(0,0,0,0.1); }
+        .input-ghost:focus { outline: none; border-color: #3b82f6; }
+
+        /* Smooth Lists */
+        .list-enter-active, .list-leave-active { transition: all 0.3s ease; }
+        .list-enter-from, .list-leave-to { opacity: 0; transform: translateY(10px); }
+
+        /* Custom Date Input Style */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: 0.6;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+        }
+
+        /* Custom Scrollbar for daily itinerary */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.05);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.1);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(0,0,0,0.2);
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+</head>
+<body class="text-slate-800 antialiased p-4 md:p-8">
+
+    <div id="app" class="max-w-[1600px] mx-auto pb-20">
+        
+        <!-- Header -->
+        <header class="flex flex-col xl:flex-row justify-between items-center mb-10 gap-6">
+            <div class="text-center xl:text-left">
+                <h1 class="text-4xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 tracking-tight flex items-center justify-center xl:justify-start gap-3">
+                    Viajeros en Familia <i class="ph-fill ph-airplane-tilt text-blue-500"></i>
+                </h1>
+                <p class="text-slate-500 font-medium mt-1 ml-1 flex items-center justify-center xl:justify-start gap-2">
+                    <i class="ph ph-wallet text-slate-400"></i> Planifica, divide y disfruta.
+                </p>
+            </div>
+
+            <!-- Botones Globales -->
+            <div class="flex flex-wrap items-center justify-center gap-3">
+                
+                <!-- Botón Instalar App (Solo visible si es instalable) -->
+                <button 
+                    v-if="showInstallBtn"
+                    @click="instalarApp"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-full font-bold shadow-lg shadow-blue-300 transition flex items-center gap-2 animate-bounce">
+                    <i class="ph-bold ph-download-simple text-xl"></i> 
+                    <span>Instalar App</span>
+                </button>
+
+                <input type="file" id="jsonInput" class="hidden" accept=".json" @change="importarArchivo">
+                
+                <button 
+                    @click="triggerImport"
+                    class="bg-white hover:bg-slate-50 text-slate-600 px-5 py-3 rounded-full font-semibold shadow-md border border-slate-200 transition flex items-center gap-2 group">
+                    <i class="ph-bold ph-upload-simple text-xl group-hover:text-blue-500 transition"></i> 
+                    <span class="hidden sm:inline">Cargar</span>
+                </button>
+                
+                <button 
+                    @click="exportarTodo"
+                    class="bg-white hover:bg-slate-50 text-slate-600 px-5 py-3 rounded-full font-semibold shadow-md border border-slate-200 transition flex items-center gap-2 group">
+                    <i class="ph-bold ph-download-simple text-xl group-hover:text-blue-500 transition"></i> 
+                    <span class="hidden sm:inline">Guardar Todo</span>
+                </button>
+
+                <div class="h-8 w-px bg-slate-300 mx-1 hidden sm:block"></div>
+
+                <button 
+                    @click="crearViaje"
+                    class="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-full font-semibold shadow-xl shadow-slate-300/50 transition transform hover:-translate-y-1 active:scale-95 flex items-center gap-2 border border-slate-700">
+                    <i class="ph ph-plus-circle text-xl text-blue-400"></i> <span class="hidden sm:inline">Nuevo</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Lista de Viajes -->
+        <div class="flex flex-col gap-12">
+            
+            <transition-group name="list">
+                <div v-for="(viaje, index) in viajes" :key="viaje.id" class="glass-panel rounded-[2rem] p-6 md:p-10 relative group border border-white/50">
+                    
+                    <!-- Botones de Acción Superior -->
+                    <div class="absolute top-6 right-6 flex items-center gap-2 z-20">
+                        <!-- Exportar este viaje -->
+                        <button @click="exportarViaje(viaje)" class="text-slate-500 hover:text-blue-600 bg-white/60 hover:bg-white transition p-2.5 rounded-full shadow-sm hover:shadow-md border border-transparent hover:border-blue-100" title="Descargar este viaje (JSON)">
+                            <i class="ph-bold ph-download text-lg"></i>
+                        </button>
+
+                        <div class="h-6 w-px bg-slate-300/50 mx-1"></div>
+
+                        <!-- WhatsApp -->
+                        <button @click="compartirWhatsapp(viaje)" class="text-white bg-emerald-500 hover:bg-emerald-600 transition p-2.5 rounded-full shadow-lg shadow-emerald-200 hover:shadow-emerald-300 transform hover:-translate-y-0.5" title="Enviar resumen por WhatsApp">
+                            <i class="ph ph-whatsapp-logo text-xl"></i>
+                        </button>
+                        
+                        <!-- Eliminar -->
+                        <button @click="eliminarViaje(index)" class="text-slate-400 hover:text-red-500 transition p-2.5 bg-white/50 hover:bg-white rounded-full" title="Eliminar viaje">
+                            <i class="ph ph-trash text-xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Cabecera del Viaje -->
+                    <div class="mb-10 border-b border-slate-200/60 pb-8">
+                        
+                        <!-- Título y Fechas -->
+                        <div class="flex flex-col md:flex-row md:items-start justify-between gap-8 mb-8 pr-32">
+                            <div class="flex items-center gap-3 flex-grow max-w-2xl">
+                                <span class="bg-gradient-to-br from-blue-500 to-indigo-600 text-white p-3 rounded-2xl shadow-lg shadow-blue-200 self-start mt-2">
+                                    <i class="ph ph-map-trifold text-2xl"></i>
+                                </span>
+                                <div class="w-full">
+                                    <input 
+                                        type="text" 
+                                        v-model="viaje.nombre" 
+                                        class="text-3xl md:text-4xl font-bold w-full bg-transparent focus:outline-none focus:ring-0 border-b-2 border-transparent focus:border-blue-500 rounded-none px-0 text-slate-800 placeholder-slate-300 transition-colors"
+                                        placeholder="Nombre del Viaje...">
+                                    <div class="mt-2 text-slate-400 font-medium flex items-center gap-2 text-sm">
+                                        <i class="ph-bold ph-clock"></i>
+                                        <span>Duración: {{ calcularDuracionDias(viaje) }} días</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Selector de Fechas (Rango) -->
+                            <div class="flex flex-col gap-1 items-end bg-white/40 p-3 rounded-xl border border-white/60 shadow-sm w-full md:w-auto">
+                                <div class="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
+                                    <div class="flex flex-col">
+                                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Desde</label>
+                                        <input 
+                                            type="date" 
+                                            v-model="viaje.fechaInicio"
+                                            class="bg-white/60 border border-white rounded-lg px-2 py-1 text-sm font-bold text-slate-700 outline-none hover:bg-white transition cursor-pointer shadow-sm">
+                                    </div>
+                                    <div class="h-8 w-px bg-slate-300/50"></div>
+                                    <div class="flex flex-col">
+                                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hasta</label>
+                                        <input 
+                                            type="date" 
+                                            v-model="viaje.fechaFin"
+                                            class="bg-white/60 border border-white rounded-lg px-2 py-1 text-sm font-bold text-slate-700 outline-none hover:bg-white transition cursor-pointer shadow-sm">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Panel de Dashboard (Totales NEÓN) -->
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                            
+                            <!-- 1. Coste Total -->
+                            <div class="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-4 md:p-5 border border-white/10 shadow-lg shadow-blue-500/30 relative overflow-hidden group/card text-white">
+                                <div class="relative z-10">
+                                    <p class="text-[9px] md:text-[10px] uppercase tracking-wider font-bold text-blue-200 mb-1 flex items-center gap-1"><i class="ph-fill ph-coins"></i> Total</p>
+                                    <p class="text-xl md:text-3xl font-bold tracking-tight text-white drop-shadow-sm">{{ formatearMoneda(calcularTotalViaje(viaje)) }}</p>
+                                </div>
+                                <div class="absolute right-[-10px] bottom-[-10px] text-white/10 group-hover/card:scale-110 transition duration-500 group-hover/card:rotate-12">
+                                    <i class="ph-fill ph-currency-dollar text-6xl md:text-8xl"></i>
+                                </div>
+                            </div>
+
+                            <!-- 2. Por Familia -->
+                            <div class="bg-gradient-to-br from-violet-600 to-purple-700 rounded-2xl p-4 md:p-5 border border-white/10 shadow-lg shadow-purple-500/30 relative overflow-hidden group/card text-white">
+                                <div class="relative z-10">
+                                    <p class="text-[9px] md:text-[10px] uppercase tracking-wider font-bold text-purple-200 mb-1 flex items-center gap-1"><i class="ph-fill ph-users-three"></i> Por Fam.</p>
+                                    <p class="text-xl md:text-3xl font-bold tracking-tight text-white drop-shadow-sm">{{ formatearMoneda(calcularPorFamilia(viaje)) }}</p>
+                                    <p class="text-[10px] text-purple-200 mt-2 font-medium bg-white/10 inline-block px-2 py-0.5 rounded-lg">{{ viaje.familias.length }} Familias</p>
+                                </div>
+                                <div class="absolute right-[-10px] bottom-[-10px] text-white/10 group-hover/card:scale-110 transition duration-500 group-hover/card:rotate-12">
+                                    <i class="ph-fill ph-users text-6xl md:text-8xl"></i>
+                                </div>
+                            </div>
+
+                            <!-- 3. Estado Pagos -->
+                            <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-4 md:p-5 border border-white/10 shadow-lg shadow-emerald-500/30 relative overflow-hidden group/card text-white">
+                                <div class="relative z-10">
+                                    <div class="flex justify-between items-end mb-1">
+                                        <p class="text-[9px] md:text-[10px] uppercase tracking-wider font-bold text-emerald-100 flex items-center gap-1"><i class="ph-fill ph-check-circle"></i> Pagado</p>
+                                        <p class="text-xs font-bold text-emerald-700 bg-emerald-200 px-2 py-0.5 rounded-full shadow-sm">{{ calcularPorcentajePagado(viaje) }}%</p>
+                                    </div>
+                                    <p class="text-lg md:text-2xl font-bold tracking-tight drop-shadow-sm">{{ formatearMoneda(calcularTotalPagado(viaje)) }}</p>
+                                    <div class="w-full bg-black/20 h-1.5 mt-2 md:mt-3 rounded-full overflow-hidden backdrop-blur-sm">
+                                        <div class="bg-white h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(255,255,255,0.8)]" :style="{ width: calcularPorcentajePagado(viaje) + '%' }"></div>
+                                    </div>
+                                    
+                                    <!-- Desglose Pendiente -->
+                                    <div class="flex justify-between items-end mt-3 pt-2 border-t border-white/20">
+                                        <div>
+                                            <p class="text-[8px] md:text-[9px] uppercase font-bold text-emerald-100">Falta Total</p>
+                                            <p class="text-xs md:text-sm font-bold text-white">{{ formatearMoneda(calcularTotalPendiente(viaje)) }}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-[8px] md:text-[9px] uppercase font-bold text-emerald-100">Falta x Fam</p>
+                                            <p class="text-sm md:text-lg font-bold text-white leading-none">{{ formatearMoneda(calcularPendientePorFamilia(viaje)) }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 4. Plan de Ahorro -->
+                            <div class="bg-gradient-to-br from-orange-500 to-pink-600 rounded-2xl p-4 md:p-5 border border-white/10 shadow-lg shadow-orange-500/30 relative overflow-hidden group/card text-white">
+                                <div class="relative z-10">
+                                    <p class="text-[9px] md:text-[10px] uppercase tracking-wider font-bold text-orange-100 mb-1 flex items-center gap-1"><i class="ph-fill ph-calendar"></i> Ahorro/Mes</p>
+                                    <p class="text-lg md:text-2xl font-bold tracking-tight drop-shadow-sm">
+                                        {{ formatearMoneda(calcularAhorroMensual(viaje)) }}
+                                    </p>
+                                    
+                                    <!-- Desglose Ahorro -->
+                                    <div class="flex justify-between items-end mt-3 pt-2 border-t border-white/20">
+                                         <div>
+                                            <p class="text-[8px] md:text-[9px] uppercase font-bold text-orange-100">Plazo</p>
+                                            <p class="text-xs md:text-sm font-bold text-white">{{ calcularMesesRestantes(viaje) }} meses</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-[8px] md:text-[9px] uppercase font-bold text-orange-100">Ahorro x Fam</p>
+                                            <p class="text-sm md:text-lg font-bold text-white leading-none">{{ formatearMoneda(calcularAhorroMensualPorFamilia(viaje)) }}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="absolute right-[-10px] bottom-[-10px] text-white/10 group-hover/card:scale-110 transition duration-500 group-hover/card:rotate-12">
+                                    <i class="ph-fill ph-piggy-bank text-6xl md:text-8xl"></i>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- BALANCE Y COMPENSACIONES -->
+                    <div class="mt-8 mb-4 bg-white/40 rounded-2xl p-4 md:p-6 border border-white/60 shadow-inner">
+                        <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-200 pb-2">
+                            <i class="ph-fill ph-scales text-xl text-blue-500"></i> Balance de Cuentas
+                        </h3>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- Columna 1: Estado Actual -->
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-400 mb-3">CONTRIBUCIÓN NETA</h4>
+                                <div class="space-y-3">
+                                    <div v-for="balance in calcularBalance(viaje)" :key="balance.familia" class="flex items-center justify-between bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs" :class="balance.saldo >= 0 ? 'bg-emerald-500' : 'bg-red-400'">
+                                                {{ balance.familia.charAt(0) }}
+                                            </div>
+                                            <div>
+                                                <p class="font-bold text-sm text-slate-700">{{ balance.familia }}</p>
+                                                <p class="text-[10px] text-slate-400">Aportado: {{ formatearMoneda(balance.aportado) }}</p>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="font-bold text-sm" :class="balance.saldo >= 0 ? 'text-emerald-600' : 'text-red-500'">
+                                                {{ balance.saldo >= 0 ? '+' : '' }}{{ formatearMoneda(balance.saldo) }}
+                                            </p>
+                                            <p class="text-[10px] font-bold" :class="balance.saldo >= 0 ? 'text-emerald-400' : 'text-red-300'">
+                                                {{ balance.saldo >= 0 ? 'A devolver' : 'Debe pagar' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Columna 2: Sugerencia de Saldos -->
+                            <div class="bg-slate-50 rounded-xl p-4 border border-slate-100 relative overflow-hidden">
+                                <h4 class="text-xs font-bold text-slate-400 mb-3">AJUSTE SUGERIDO</h4>
+                                <div v-if="calcularCompensaciones(viaje).length > 0" class="space-y-3 relative z-10">
+                                    <div v-for="(deuda, dIdx) in calcularCompensaciones(viaje)" :key="dIdx" class="bg-white border border-slate-200 rounded-lg p-3 flex justify-between items-center shadow-sm">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <span class="font-bold text-red-500">{{ deuda.deudor }}</span>
+                                            <i class="ph-bold ph-arrow-right text-slate-300"></i>
+                                            <span class="font-bold text-emerald-600">{{ deuda.acreedor }}</span>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <span class="font-bold text-slate-700">{{ formatearMoneda(deuda.cantidad) }}</span>
+                                            <button @click="saldarDeuda(viaje, deuda)" class="bg-blue-100 hover:bg-blue-200 text-blue-600 text-xs font-bold px-3 py-1.5 rounded-full transition">
+                                                Saldar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div v-else class="h-full flex flex-col items-center justify-center text-slate-400 py-4">
+                                    <i class="ph-duotone ph-check-circle text-4xl text-emerald-200 mb-2"></i>
+                                    <p class="text-sm font-medium">Cuentas saldadas</p>
+                                </div>
+                                <div v-if="viaje.compensaciones && viaje.compensaciones.length > 0" class="mt-6 pt-4 border-t border-slate-200">
+                                    <h5 class="text-[10px] font-bold text-slate-400 mb-2 uppercase">Historial</h5>
+                                    <div class="flex flex-wrap gap-2">
+                                        <div v-for="(comp, cIdx) in viaje.compensaciones" :key="cIdx" class="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-500 flex items-center gap-1">
+                                            <span>{{ comp.deudor }} <i class="ph-bold ph-arrow-right text-[8px]"></i> {{ comp.acreedor }}: <b>{{ formatearMoneda(comp.cantidad) }}</b></span>
+                                            <button @click="viaje.compensaciones.splice(cIdx, 1)" class="ml-1 text-slate-300 hover:text-red-400"><i class="ph-bold ph-x"></i></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NUEVA SECCIÓN: PLANNING DE INTERÉS -->
+                    <div class="mb-10 bg-white/40 rounded-2xl p-4 md:p-6 border border-white/60 shadow-inner">
+                        <h3 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-6 flex items-center gap-2">
+                            <i class="ph-fill ph-map-pin text-xl text-purple-400"></i> Planning de Interés
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <!-- 1. Lugares -->
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-col">
+                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 text-indigo-500 font-bold text-sm">
+                                    <i class="ph-fill ph-binoculars text-lg"></i> Lugares
+                                </div>
+                                <div class="space-y-2 flex-grow mb-3">
+                                    <div v-for="(item, idx) in viaje.puntosInteres.lugares" :key="idx" class="flex items-center gap-2 group/pt">
+                                        <input type="checkbox" v-model="item.check" class="accent-indigo-500 w-4 h-4 cursor-pointer">
+                                        <span :class="{'line-through text-slate-400': item.check}" class="text-xs font-semibold text-slate-600 w-full">{{ item.nombre }}</span>
+                                        <button @click="eliminarPunto(viaje.puntosInteres.lugares, idx)" class="text-slate-300 hover:text-red-400 opacity-0 group-hover/pt:opacity-100 transition"><i class="ph-bold ph-x"></i></button>
+                                    </div>
+                                    <div v-if="viaje.puntosInteres.lugares.length === 0" class="text-xs text-slate-400 italic text-center py-2">Ningún lugar...</div>
+                                </div>
+                                <input type="text" placeholder="+ Añadir lugar..." @keydown.enter="agregarPunto(viaje.puntosInteres.lugares, $event)" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-300 transition">
+                            </div>
+
+                            <!-- 2. Restaurantes -->
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-col">
+                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 text-orange-500 font-bold text-sm">
+                                    <i class="ph-fill ph-fork-knife text-lg"></i> Restaurantes
+                                </div>
+                                <div class="space-y-2 flex-grow mb-3">
+                                    <div v-for="(item, idx) in viaje.puntosInteres.restaurantes" :key="idx" class="flex items-center gap-2 group/pt">
+                                        <input type="checkbox" v-model="item.check" class="accent-orange-500 w-4 h-4 cursor-pointer">
+                                        <span :class="{'line-through text-slate-400': item.check}" class="text-xs font-semibold text-slate-600 w-full">{{ item.nombre }}</span>
+                                        <button @click="eliminarPunto(viaje.puntosInteres.restaurantes, idx)" class="text-slate-300 hover:text-red-400 opacity-0 group-hover/pt:opacity-100 transition"><i class="ph-bold ph-x"></i></button>
+                                    </div>
+                                    <div v-if="viaje.puntosInteres.restaurantes.length === 0" class="text-xs text-slate-400 italic text-center py-2">Ningún sitio...</div>
+                                </div>
+                                <input type="text" placeholder="+ Añadir restaurante..." @keydown.enter="agregarPunto(viaje.puntosInteres.restaurantes, $event)" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-orange-300 transition">
+                            </div>
+
+                            <!-- 3. Actividades -->
+                            <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-col">
+                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-slate-100 text-teal-500 font-bold text-sm">
+                                    <i class="ph-fill ph-ticket text-lg"></i> Actividades
+                                </div>
+                                <div class="space-y-2 flex-grow mb-3">
+                                    <div v-for="(item, idx) in viaje.puntosInteres.actividades" :key="idx" class="flex items-center gap-2 group/pt">
+                                        <input type="checkbox" v-model="item.check" class="accent-teal-500 w-4 h-4 cursor-pointer">
+                                        <span :class="{'line-through text-slate-400': item.check}" class="text-xs font-semibold text-slate-600 w-full">{{ item.nombre }}</span>
+                                        <button @click="eliminarPunto(viaje.puntosInteres.actividades, idx)" class="text-slate-300 hover:text-red-400 opacity-0 group-hover/pt:opacity-100 transition"><i class="ph-bold ph-x"></i></button>
+                                    </div>
+                                    <div v-if="viaje.puntosInteres.actividades.length === 0" class="text-xs text-slate-400 italic text-center py-2">Ninguna actividad...</div>
+                                </div>
+                                <input type="text" placeholder="+ Añadir actividad..." @keydown.enter="agregarPunto(viaje.puntosInteres.actividades, $event)" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 outline-none focus:border-teal-300 transition">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NUEVA SECCIÓN: DIARIO DE VIAJE -->
+                    <div class="mb-10 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 rounded-2xl p-4 md:p-6 border border-blue-100 shadow-inner">
+                        <h3 class="text-sm font-bold text-blue-400 uppercase tracking-wider mb-6 flex items-center gap-2 border-b border-blue-100 pb-2">
+                            <i class="ph-fill ph-notebook text-xl text-blue-500"></i> Diario de Visitas
+                        </h3>
+                        
+                        <div class="flex overflow-x-auto pb-4 gap-4 snap-x">
+                             <div v-for="dia in generarDiasViaje(viaje)" :key="dia.fechaStr" class="snap-center flex-shrink-0 w-72 bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex flex-col h-80">
+                                 <!-- Cabecera Día -->
+                                 <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+                                     <div>
+                                         <p class="text-xs font-bold text-blue-500 uppercase">Día {{ dia.diaNum }}</p>
+                                         <p class="text-sm font-bold text-slate-700">{{ dia.fechaFmt }}</p>
+                                     </div>
+                                     <i class="ph-duotone ph-sun text-2xl text-orange-300"></i>
+                                 </div>
+
+                                 <!-- Lista Visitas -->
+                                 <div class="flex-grow overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                                     <div v-if="!viaje.itinerario[dia.fechaStr] || viaje.itinerario[dia.fechaStr].length === 0" class="text-center text-xs text-slate-400 py-4 italic">
+                                         Sin planes...
+                                     </div>
+                                     
+                                     <div v-for="(act, idx) in (viaje.itinerario[dia.fechaStr] || [])" :key="idx" class="flex items-start gap-2 group/act">
+                                         <button @click="act.completado = !act.completado" class="mt-0.5 text-lg transition" :class="act.completado ? 'text-emerald-500' : 'text-slate-300 hover:text-blue-400'">
+                                             <i :class="act.completado ? 'ph-fill ph-check-square' : 'ph-bold ph-square'"></i>
+                                         </button>
+                                         <span class="text-xs font-medium text-slate-600 leading-tight pt-1 break-words w-full" :class="{'line-through text-slate-400': act.completado}">{{ act.texto }}</span>
+                                         <button @click="borrarVisita(viaje, dia.fechaStr, idx)" class="opacity-0 group-hover/act:opacity-100 text-slate-300 hover:text-red-400 transition">
+                                             <i class="ph-bold ph-x"></i>
+                                         </button>
+                                     </div>
+                                 </div>
+
+                                 <!-- Input Añadir -->
+                                 <div class="mt-3 pt-2 border-t border-slate-50">
+                                     <input 
+                                        type="text" 
+                                        placeholder="+ Añadir visita..." 
+                                        class="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2 py-1.5 outline-none focus:border-blue-400 transition"
+                                        @keydown.enter="agregarVisita(viaje, dia.fechaStr, $event)">
+                                 </div>
+                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Sección Familias -->
+                    <div class="mb-10">
+                        <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                            <i class="ph-fill ph-users text-lg text-blue-400"></i> Familias Participantes ({{ viaje.familias.length }})
+                        </h3>
+                        <div class="flex flex-wrap gap-3 items-center">
+                            <transition-group name="list">
+                                <div v-for="(familia, fIndex) in viaje.familias" :key="fIndex + familia" class="bg-white pl-4 pr-2 py-2 rounded-full shadow-sm text-sm font-bold text-slate-700 flex items-center gap-2 border border-slate-100 group/tag hover:scale-105 transition cursor-default hover:border-blue-200 hover:shadow-md">
+                                    <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                                    {{ familia }}
+                                    <button @click="eliminarFamilia(viaje, fIndex)" class="h-6 w-6 rounded-full hover:bg-red-100 text-slate-300 hover:text-red-500 flex items-center justify-center transition ml-1">
+                                        <i class="ph-bold ph-x text-xs"></i>
+                                    </button>
+                                </div>
+                            </transition-group>
+                            
+                            <!-- Input para nueva familia -->
+                            <div class="relative">
+                                <i class="ph-bold ph-plus absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i>
+                                <input 
+                                    type="text" 
+                                    placeholder="Añadir familia..." 
+                                    @keydown.enter="agregarFamilia(viaje, $event)"
+                                    class="bg-white/40 border border-dashed border-slate-300 hover:border-blue-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-100 rounded-full pl-9 pr-5 py-2 text-sm outline-none transition w-48 placeholder-slate-500 focus:w-64">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Grid de Conceptos -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                        
+                        <div v-for="(items, categoria) in viaje.conceptos" :key="categoria" class="flex flex-col h-full">
+                            <!-- Cabecera Categoría -->
+                            <div class="bg-white/80 rounded-t-2xl p-3 border-b border-white flex justify-between items-center backdrop-blur-md shadow-sm z-10 sticky top-0 group/cat">
+                                <span class="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                                    <span class="w-8 h-8 rounded-lg flex items-center justify-center transition-colors" :class="getColorCategoria(categoria)">
+                                        <i :class="getIconoCategoria(categoria) + ' text-lg text-white'"></i> 
+                                    </span>
+                                    {{ categoria }}
+                                </span>
+                                <span class="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg border border-slate-200 min-w-[60px] text-center">
+                                    {{ formatearMoneda(calcularTotalCategoria(items)) }}
+                                </span>
+                            </div>
+
+                            <!-- Lista de Items -->
+                            <div class="bg-white/30 border border-white rounded-b-2xl p-2 flex-grow flex flex-col gap-2 shadow-inner min-h-[150px]">
+                                <transition-group name="list">
+                                    <div v-for="(item, iIndex) in items" :key="iIndex" 
+                                         class="bg-white p-3 rounded-xl shadow-sm hover:shadow-md transition group/item border border-transparent hover:border-blue-100 relative overflow-hidden"
+                                         :class="{'opacity-80 bg-slate-50': item.pagado}">
+                                        
+                                        <!-- Checkbox Pagado (Visual Toggle) -->
+                                        <div class="absolute left-0 top-0 bottom-0 w-1 bg-emerald-400 transition-all duration-300" :class="item.pagado ? 'opacity-100' : 'opacity-0'"></div>
+
+                                        <div class="flex items-start justify-between gap-2 mb-2 pl-2">
+                                            <input v-model="item.nombre" 
+                                                   class="input-ghost w-full text-xs font-semibold text-slate-700 placeholder-slate-300 transition" 
+                                                   :class="{'line-through text-slate-400': item.pagado}"
+                                                   placeholder="Concepto...">
+                                            
+                                            <div class="flex items-center gap-1">
+                                                <button @click="eliminarItem(items, iIndex)" class="h-6 w-6 rounded-full flex items-center justify-center text-slate-200 hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition">
+                                                    <i class="ph-fill ph-x-circle text-lg"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex items-center gap-1 pl-2 border-t border-slate-100 pt-2 mt-1">
+                                            <span class="text-slate-400 text-[10px]">€</span>
+                                            <input type="number" v-model.number="item.coste" 
+                                                   class="input-ghost w-20 text-sm font-mono text-slate-600 font-bold placeholder-slate-300" 
+                                                   placeholder="0.00">
+                                            
+                                            <!-- Selector de Pagador -->
+                                            <div class="flex-grow flex justify-end">
+                                                <select 
+                                                    v-model="item.pagadoPor" 
+                                                    @change="item.pagadoPor ? item.pagado = true : null"
+                                                    class="bg-transparent text-[10px] font-bold text-slate-500 outline-none border-b border-transparent hover:border-slate-300 cursor-pointer text-right max-w-[90px]">
+                                                    <option value="">Pendiente</option>
+                                                    <option v-for="fam in viaje.familias" :key="fam" :value="fam">
+                                                        {{ fam }}
+                                                    </option>
+                                                </select>
+                                                <div v-if="item.pagado && !item.pagadoPor" class="ml-1 text-emerald-500" title="Pagado">
+                                                    <i class="ph-bold ph-check"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </transition-group>
+
+                                <!-- Añadir Item -->
+                                <button @click="agregarItem(items)" class="mt-auto w-full py-3 border border-dashed border-slate-300 rounded-xl text-slate-400 text-xs font-semibold hover:bg-white hover:text-blue-600 hover:border-blue-300 transition flex justify-center items-center gap-2 group/btn">
+                                    <i class="ph-bold ph-plus group-hover/btn:scale-110 transition bg-slate-200 text-slate-500 rounded-full w-4 h-4 flex items-center justify-center text-[8px] group-hover/btn:bg-blue-100 group-hover/btn:text-blue-500"></i> Añadir Gasto
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </transition-group>
+            
+            <!-- Estado Vacío -->
+            <div v-if="viajes.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400 animate-pulse">
+                <i class="ph-duotone ph-airplane-tilt text-8xl mb-4 opacity-50 text-blue-300"></i>
+                <p class="text-2xl font-light text-slate-500">No hay viajes planeados</p>
+                <button @click="crearViaje" class="mt-6 text-white bg-blue-500 px-6 py-2 rounded-full hover:bg-blue-600 transition shadow-lg shadow-blue-200">Crear el primero</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Registrar Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW registrado', reg))
+                    .catch(err => console.log('SW error', err));
+            });
+        }
+
+        const { createApp, ref, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                // Estado para PWA
+                const deferredPrompt = ref(null);
+                const showInstallBtn = ref(false);
+
+                onMounted(() => {
+                    window.addEventListener('beforeinstallprompt', (e) => {
+                        e.preventDefault();
+                        deferredPrompt.value = e;
+                        showInstallBtn.value = true;
+                    });
+                });
+
+                const instalarApp = async () => {
+                    if (!deferredPrompt.value) return;
+                    deferredPrompt.value.prompt();
+                    const { outcome } = await deferredPrompt.value.userChoice;
+                    if (outcome === 'accepted') {
+                        deferredPrompt.value = null;
+                        showInstallBtn.value = false;
+                    }
+                };
+
+                // Fechas por defecto: Mañana hasta +5 días
+                const getDefaultDates = () => {
+                    const start = new Date();
+                    start.setDate(start.getDate() + 1);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + 4);
+                    return {
+                        start: start.toISOString().split('T')[0],
+                        end: end.toISOString().split('T')[0]
+                    };
+                };
+
+                const getTodayDate = () => new Date().toISOString().split('T')[0];
+
+                const fechasDef = getDefaultDates();
+
+                // Estado Inicial
+                const viajes = ref([
+                    {
+                        id: 1,
+                        nombre: 'Escapada a la Montaña 🏔️',
+                        fechaInicio: fechasDef.start,
+                        fechaFin: fechasDef.end,
+                        fechaCreacion: getTodayDate(),
+                        familias: ['Familia Pérez', 'Familia García'],
+                        compensaciones: [],
+                        itinerario: {
+                            [fechasDef.start]: [{ texto: 'Llegada y Check-in', completado: true }, { texto: 'Cena de Bienvenida', completado: false }],
+                        },
+                        // NUEVA SECCIÓN DE PUNTOS DE INTERÉS
+                        puntosInteres: {
+                            lugares: [{ nombre: 'Mirador del Valle', check: false }],
+                            restaurantes: [{ nombre: 'El Asador de Juan', check: true }],
+                            actividades: []
+                        },
+                        conceptos: {
+                            Casa: [
+                                { nombre: 'Airbnb Cabaña', coste: 450, pagado: true, pagadoPor: 'Familia Pérez' },
+                                { nombre: 'Limpieza', coste: 50, pagado: false, pagadoPor: '' }
+                            ],
+                            Transporte: [
+                                { nombre: 'Gasolina', coste: 60, pagado: true, pagadoPor: 'Familia García' },
+                                { nombre: 'Peajes', coste: 25, pagado: false, pagadoPor: '' }
+                            ],
+                            Comida: [
+                                { nombre: 'Compra Super', coste: 150, pagado: true, pagadoPor: 'Familia Pérez' },
+                                { nombre: 'Cena Sábado', coste: 120, pagado: false, pagadoPor: '' }
+                            ],
+                            Entradas: [],
+                            Actividades: [
+                                { nombre: 'Alquiler Esquís', coste: 200, pagado: true, pagadoPor: 'Familia García' },
+                                { nombre: 'Clases Monitor', coste: 100, pagado: false, pagadoPor: '' }
+                            ]
+                        }
+                    }
+                ]);
+
+                const categoriasBase = ['Casa', 'Transporte', 'Comida', 'Entradas', 'Actividades'];
+
+                // --- Métodos de Gestión ---
+                const crearViaje = () => {
+                    const d = getDefaultDates();
+                    const nuevo = {
+                        id: Date.now(),
+                        nombre: 'Nuevo Viaje',
+                        fechaInicio: d.start,
+                        fechaFin: d.end,
+                        fechaCreacion: getTodayDate(),
+                        familias: [],
+                        compensaciones: [],
+                        itinerario: {},
+                        puntosInteres: { lugares: [], restaurantes: [], actividades: [] },
+                        conceptos: {}
+                    };
+                    categoriasBase.forEach(cat => nuevo.conceptos[cat] = []);
+                    viajes.value.unshift(nuevo);
+                };
+
+                const eliminarViaje = (idx) => {
+                    if(confirm('¿Borrar este viaje?')) viajes.value.splice(idx, 1);
+                };
+
+                const agregarFamilia = (viaje, e) => {
+                    const val = e.target.value.trim();
+                    if (val) {
+                        viaje.familias.push(val);
+                        e.target.value = '';
+                    }
+                };
+
+                const eliminarFamilia = (viaje, idx) => viaje.familias.splice(idx, 1);
+                
+                const agregarItem = (lista) => lista.push({ nombre: '', coste: '', pagado: false, pagadoPor: '' });
+                const eliminarItem = (lista, idx) => lista.splice(idx, 1);
+
+                // --- PUNTOS DE INTERÉS ---
+                const agregarPunto = (lista, e) => {
+                    if(e.target.value.trim()) {
+                        lista.push({ nombre: e.target.value.trim(), check: false });
+                        e.target.value = '';
+                    }
+                };
+                const eliminarPunto = (lista, idx) => lista.splice(idx, 1);
+
+                // --- ITINERARIO ---
+                const calcularDuracionDias = (viaje) => {
+                    const inicio = new Date(viaje.fechaInicio);
+                    const fin = new Date(viaje.fechaFin);
+                    const diffTime = Math.abs(fin - inicio);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                    return diffDays + 1; // Incluir el primer día
+                };
+
+                const generarDiasViaje = (viaje) => {
+                    const dias = [];
+                    let actual = new Date(viaje.fechaInicio);
+                    const fin = new Date(viaje.fechaFin);
+                    let contador = 1;
+
+                    // Loop de seguridad para no crashear si las fechas están mal
+                    while (actual <= fin && dias.length < 30) {
+                        dias.push({
+                            fechaStr: actual.toISOString().split('T')[0],
+                            fechaFmt: actual.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }),
+                            diaNum: contador
+                        });
+                        actual.setDate(actual.getDate() + 1);
+                        contador++;
+                    }
+                    return dias;
+                };
+
+                const agregarVisita = (viaje, fechaStr, e) => {
+                    const val = e.target.value.trim();
+                    if(!val) return;
+                    
+                    if(!viaje.itinerario[fechaStr]) {
+                        viaje.itinerario[fechaStr] = [];
+                    }
+                    viaje.itinerario[fechaStr].push({ texto: val, completado: false });
+                    e.target.value = '';
+                };
+
+                const borrarVisita = (viaje, fechaStr, idx) => {
+                    if(viaje.itinerario[fechaStr]) {
+                        viaje.itinerario[fechaStr].splice(idx, 1);
+                    }
+                };
+
+                // --- Cálculos Financieros ---
+                const calcularTotalCategoria = (items) => items.reduce((acc, item) => acc + (Number(item.coste) || 0), 0);
+                
+                const calcularTotalViaje = (viaje) => {
+                    return Object.values(viaje.conceptos).reduce((acc, items) => acc + calcularTotalCategoria(items), 0);
+                };
+
+                const calcularPorFamilia = (viaje) => {
+                    const total = calcularTotalViaje(viaje);
+                    return viaje.familias.length > 0 ? total / viaje.familias.length : total;
+                };
+
+                const calcularTotalPagado = (viaje) => {
+                    let total = 0;
+                    Object.values(viaje.conceptos).forEach(items => {
+                        total += items.reduce((acc, item) => acc + (item.pagado ? (Number(item.coste) || 0) : 0), 0);
+                    });
+                    return total;
+                };
+
+                const calcularTotalPendiente = (viaje) => {
+                    return calcularTotalViaje(viaje) - calcularTotalPagado(viaje);
+                };
+
+                const calcularPendientePorFamilia = (viaje) => {
+                    const pendiente = calcularTotalPendiente(viaje);
+                    const num = viaje.familias.length;
+                    return num > 0 ? pendiente / num : pendiente;
+                };
+
+                const calcularPorcentajePagado = (viaje) => {
+                    const total = calcularTotalViaje(viaje);
+                    if (total === 0) return 0;
+                    return Math.round((calcularTotalPagado(viaje) / total) * 100);
+                };
+
+                const calcularMesesRestantes = (viaje) => {
+                    if (!viaje.fechaInicio || !viaje.fechaCreacion) return 1;
+                    const inicio = new Date(viaje.fechaCreacion);
+                    const fin = new Date(viaje.fechaInicio);
+                    let meses = (fin.getFullYear() - inicio.getFullYear()) * 12;
+                    meses -= inicio.getMonth();
+                    meses += fin.getMonth();
+                    return meses <= 0 ? 1 : meses;
+                };
+
+                const calcularAhorroMensual = (viaje) => {
+                    const pendiente = calcularTotalPendiente(viaje);
+                    const meses = calcularMesesRestantes(viaje);
+                    return pendiente / meses;
+                };
+
+                const calcularAhorroMensualPorFamilia = (viaje) => {
+                    const ahorro = calcularAhorroMensual(viaje);
+                    const num = viaje.familias.length;
+                    return num > 0 ? ahorro / num : ahorro;
+                };
+
+                // --- CÁLCULOS DE BALANCE ---
+                const calcularBalance = (viaje) => {
+                    if (viaje.familias.length === 0) return [];
+                    const aportaciones = {};
+                    viaje.familias.forEach(f => aportaciones[f] = 0);
+                    let totalGastadoPagado = 0;
+
+                    Object.values(viaje.conceptos).forEach(items => {
+                        items.forEach(item => {
+                            if (item.pagado && item.pagadoPor && viaje.familias.includes(item.pagadoPor)) {
+                                aportaciones[item.pagadoPor] += (Number(item.coste) || 0);
+                                totalGastadoPagado += (Number(item.coste) || 0);
+                            }
+                        });
+                    });
+
+                    if (viaje.compensaciones) {
+                        viaje.compensaciones.forEach(comp => {
+                            if (aportaciones[comp.deudor] !== undefined) aportaciones[comp.deudor] += comp.cantidad;
+                            if (aportaciones[comp.acreedor] !== undefined) aportaciones[comp.acreedor] -= comp.cantidad;
+                        });
+                    }
+
+                    const cuotaJusta = totalGastadoPagado / viaje.familias.length;
+
+                    return viaje.familias.map(familia => {
+                        const aportado = aportaciones[familia] || 0;
+                        const saldo = aportado - cuotaJusta; 
+                        return { familia, aportado, saldo };
+                    });
+                };
+
+                const calcularCompensaciones = (viaje) => {
+                    const balances = calcularBalance(viaje);
+                    let deudores = balances.filter(b => b.saldo < -0.01).map(b => ({...b}));
+                    let acreedores = balances.filter(b => b.saldo > 0.01).map(b => ({...b}));
+                    deudores.sort((a, b) => a.saldo - b.saldo);
+                    acreedores.sort((a, b) => b.saldo - a.saldo);
+                    const transacciones = [];
+                    let i = 0; let j = 0;
+                    while (i < deudores.length && j < acreedores.length) {
+                        let deudor = deudores[i];
+                        let acreedor = acreedores[j];
+                        let monto = Math.min(Math.abs(deudor.saldo), acreedor.saldo);
+                        if (monto > 0.01) {
+                            transacciones.push({ deudor: deudor.familia, acreedor: acreedor.familia, cantidad: monto });
+                        }
+                        deudor.saldo += monto;
+                        acreedor.saldo -= monto;
+                        if (Math.abs(deudor.saldo) < 0.01) i++;
+                        if (acreedor.saldo < 0.01) j++;
+                    }
+                    return transacciones;
+                };
+
+                const saldarDeuda = (viaje, deuda) => {
+                    if (!viaje.compensaciones) viaje.compensaciones = [];
+                    viaje.compensaciones.push({
+                        deudor: deuda.deudor, acreedor: deuda.acreedor,
+                        cantidad: deuda.cantidad, fecha: new Date().toISOString()
+                    });
+                };
+
+                // --- IMPORTAR / EXPORTAR ---
+                const descargarJSON = (data, filename) => {
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                const exportarTodo = () => {
+                    descargarJSON(viajes.value, `ViajerosEnFamilia_Backup_${new Date().toISOString().slice(0,10)}.json`);
+                };
+
+                const exportarViaje = (viaje) => {
+                    const safeName = viaje.nombre.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    descargarJSON(viaje, `viaje_${safeName}.json`);
+                };
+
+                const triggerImport = () => document.getElementById('jsonInput').click();
+
+                const importarArchivo = (e) => {
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        try {
+                            const json = JSON.parse(ev.target.result);
+                            
+                            // Parchear estructura antigua para añadir puntosInteres
+                            const patchViaje = (v) => {
+                                if(!v.puntosInteres) v.puntosInteres = { lugares: [], restaurantes: [], actividades: [] };
+                                return v;
+                            };
+
+                            // Caso 1: Backup Completo (Array)
+                            if (Array.isArray(json)) {
+                                if(confirm('⚠️ ESTO REEMPLAZARÁ TODOS LOS VIAJES ACTUALES.\n¿Estás seguro de que quieres cargar este backup?')) {
+                                    viajes.value = json.map(patchViaje);
+                                    alert('✅ Datos restaurados correctamente.');
+                                }
+                            } 
+                            // Caso 2: Viaje Individual (Objeto)
+                            else if (typeof json === 'object' && json.id) {
+                                // Verificar duplicados por ID
+                                const existe = viajes.value.find(v => v.id === json.id);
+                                if (existe) {
+                                    if(confirm(`El viaje "${json.nombre}" ya existe con este ID.\n¿Quieres importarlo como una copia?`)) {
+                                        json.id = Date.now(); // Nuevo ID
+                                        json.nombre = json.nombre + ' (Copia)';
+                                        viajes.value.unshift(patchViaje(json));
+                                        alert('✅ Viaje importado como copia.');
+                                    }
+                                } else {
+                                    viajes.value.unshift(patchViaje(json));
+                                    alert('✅ Viaje importado correctamente.');
+                                }
+                            } else {
+                                alert('❌ El archivo no tiene un formato válido de Viajeros en Familia.');
+                            }
+                        } catch(err) {
+                            console.error(err);
+                            alert('❌ Error al leer el archivo. Asegúrate de que es un JSON válido.');
+                        }
+                        e.target.value = ''; // Reset input
+                    };
+                    reader.readAsText(file);
+                };
+
+                // --- EXPORTAR A WHATSAPP ---
+                const compartirWhatsapp = (viaje) => {
+                    let msg = `✈️ *VIAJE: ${viaje.nombre}*\n`;
+                    msg += `📅 ${new Date(viaje.fechaInicio).toLocaleDateString()} - ${new Date(viaje.fechaFin).toLocaleDateString()}\n\n`;
+                    
+                    // 1. Resumen Global
+                    msg += `💰 *ESTADO FINANCIERO*\n`;
+                    msg += `Presupuesto Total: ${formatearMoneda(calcularTotalViaje(viaje))}\n`;
+                    msg += `Pagado: ${formatearMoneda(calcularTotalPagado(viaje))} (${calcularPorcentajePagado(viaje)}%)\n`;
+                    msg += `Pendiente Global: ${formatearMoneda(calcularTotalPendiente(viaje))}\n\n`;
+
+                    // 2. Ahorro (Requerido)
+                    const ahorroFam = calcularAhorroMensualPorFamilia(viaje);
+                    const meses = calcularMesesRestantes(viaje);
+                    msg += `🐷 *PLAN DE AHORRO (x Familia)*\n`;
+                    msg += `Cuota mensual: *${formatearMoneda(ahorroFam)}*\n`;
+                    msg += `Durante: ${meses} meses\n`;
+                    msg += `(Para cubrir los ${formatearMoneda(calcularPendientePorFamilia(viaje))} que faltan por familia)\n\n`;
+
+                    // 3. Deudas
+                    msg += `⚖️ *AJUSTE DE CUENTAS*\n`;
+                    const deudas = calcularCompensaciones(viaje);
+                    if (deudas.length === 0) msg += "✅ ¡Cuentas saldadas!\n";
+                    else deudas.forEach(d => msg += `🔴 ${d.deudor} paga a ${d.acreedor}: ${formatearMoneda(d.cantidad)}\n`);
+                    msg += `\n`;
+
+                    // 4. Planning Interés (Nuevo)
+                    if(viaje.puntosInteres) {
+                        const lug = viaje.puntosInteres.lugares.filter(x => !x.check).map(x => x.nombre);
+                        const rest = viaje.puntosInteres.restaurantes.filter(x => !x.check).map(x => x.nombre);
+                        const act = viaje.puntosInteres.actividades.filter(x => !x.check).map(x => x.nombre);
+                        
+                        if(lug.length || rest.length || act.length) {
+                             msg += `📍 *PENDIENTES DE VISITAR*\n`;
+                             if(lug.length) msg += `Lugares: ${lug.join(', ')}\n`;
+                             if(rest.length) msg += `Restaurantes: ${rest.join(', ')}\n`;
+                             if(act.length) msg += `Actividades: ${act.join(', ')}\n`;
+                             msg += `\n`;
+                        }
+                    }
+
+                    // 5. Desglose por Concepto (Requerido)
+                    msg += `📋 *DETALLE POR PARTIDAS*\n`;
+                    for(const [cat, items] of Object.entries(viaje.conceptos)) {
+                            if(items.length > 0) {
+                                const totalCat = calcularTotalCategoria(items);
+                                const pagadoCat = items.reduce((acc, item) => acc + (item.pagado ? (Number(item.coste) || 0) : 0), 0);
+                                const faltaCat = totalCat - pagadoCat;
+
+                                msg += `\n*${cat.toUpperCase()}* 💵 ${formatearMoneda(totalCat)}\n`;
+                                msg += `   ✅ Pagado: ${formatearMoneda(pagadoCat)}\n`;
+                                msg += `   ⭕ Falta: ${formatearMoneda(faltaCat)}\n`;
+                                
+                                // Items individuales (Resumido)
+                                items.forEach(item => {
+                                    const icon = item.pagado ? '✓' : '⭕';
+                                    msg += `   ${icon} ${item.nombre}: ${formatearMoneda(item.coste || 0)}\n`;
+                                });
+                            }
+                    }
+
+                    const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                    window.open(url, '_blank');
+                };
+
+                // --- UI ---
+                const formatearMoneda = (val) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(val);
+                
+                const getIconoCategoria = (cat) => {
+                    const icons = {
+                        'Casa': 'ph-house', 'Transporte': 'ph-car', 'Comida': 'ph-pizza',
+                        'Entradas': 'ph-ticket', 'Actividades': 'ph-person-simple-run'
+                    };
+                    return `ph-fill ${icons[cat] || 'ph-circle'}`;
+                };
+
+                const getColorCategoria = (cat) => {
+                    const colors = {
+                        'Casa': 'bg-blue-400', 'Transporte': 'bg-emerald-400', 'Comida': 'bg-orange-400',
+                        'Entradas': 'bg-purple-400', 'Actividades': 'bg-pink-400'
+                    };
+                    return colors[cat] || 'bg-slate-400';
+                };
+
+                return {
+                    viajes, crearViaje, eliminarViaje,
+                    agregarFamilia, eliminarFamilia,
+                    agregarItem, eliminarItem,
+                    calcularTotalCategoria, calcularTotalViaje, calcularPorFamilia,
+                    calcularTotalPagado, calcularTotalPendiente, calcularPorcentajePagado,
+                    calcularPendientePorFamilia, 
+                    calcularMesesRestantes, calcularAhorroMensual, calcularAhorroMensualPorFamilia,
+                    calcularBalance, calcularCompensaciones, saldarDeuda,
+                    generarDiasViaje, agregarVisita, borrarVisita, calcularDuracionDias,
+                    compartirWhatsapp,
+                    exportarTodo, exportarViaje, triggerImport, importarArchivo,
+                    agregarPunto, eliminarPunto,
+                    formatearMoneda, getIconoCategoria, getColorCategoria,
+                    instalarApp, showInstallBtn
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
